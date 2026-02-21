@@ -14,7 +14,11 @@ import { RubyVersionDatasource } from '../../datasource/ruby-version/index.ts';
 import { RubygemsDatasource } from '../../datasource/rubygems/index.ts';
 import { supportedDatasources as asdfSupportedDatasources } from '../asdf/index.ts';
 
+export { updateArtifacts } from './artifacts.ts';
 export { extractPackageFile } from './extract.ts';
+
+export const supportsLockFileMaintenance = true;
+export const lockFileNames = ['mise.lock'];
 
 export const displayName = 'mise-en-place';
 export const url = 'https://mise.jdx.dev';

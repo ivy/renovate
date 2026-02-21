@@ -106,6 +106,18 @@ Renovate's `mise` manager does not support the following tool syntax:
   The `version_prefix` option is converted to `extractVersion` by escaping special regex characters.
   If the version is not updated or updated incorrectly, override `extractVersion` manually in the Renovate config.
 
+### Lockfile support
+
+Renovate can update [`mise.lock`](https://mise.jdx.dev/dev-tools/mise-lock.html) lockfiles.
+
+When Renovate detects a `mise.lock` file in the same directory as the `mise.toml` being updated,
+it runs `mise lock` to regenerate the lockfile with updated checksums and download URLs.
+
+If no `mise.lock` file exists, Renovate will not create one.
+
+Renovate also supports lock file maintenance for `mise.lock`, which periodically regenerates
+the full lockfile.
+
 ### Supported default registry tool short names
 
 Renovate's `mise` manager can only version these tool short names:
