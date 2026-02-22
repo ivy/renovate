@@ -1,3 +1,4 @@
+import { isNonEmptyArray } from '@sindresorhus/is';
 import { TEMPORARY_ERROR } from '../../../constants/error-messages.ts';
 import { logger } from '../../../logger/index.ts';
 import { exec } from '../../../util/exec/index.ts';
@@ -12,13 +13,19 @@ import type { UpdateArtifact, UpdateArtifactsResult } from '../types.ts';
 
 export async function updateArtifacts({
   packageFileName,
+  updatedDeps,
   newPackageFileContent,
   config,
 }: UpdateArtifact): Promise<UpdateArtifactsResult[] | null> {
   logger.debug(`mise.updateArtifacts(${packageFileName})`);
 
+  if (!isNonEmptyArray(updatedDeps) && !config.isLockFileMaintenance) {
+    logger.debug('No updated mise deps - returning null');
+    return null;
+  }
+
   const lockFileName = getSiblingFileName(packageFileName, 'mise.lock');
-  const existingLockFileContent = await readLocalFile(lockFileName);
+  const existingLockFileContent = await readLocalFile(lockFileName, 'utf8');
   if (!existingLockFileContent) {
     logger.debug('No mise.lock found');
     return null;
@@ -43,11 +50,8 @@ export async function updateArtifacts({
 
     await exec('mise lock', execOptions);
 
-    const newLockFileContent = await readLocalFile(lockFileName);
-    if (
-      !newLockFileContent ||
-      Buffer.compare(existingLockFileContent, newLockFileContent) === 0
-    ) {
+    const newLockFileContent = await readLocalFile(lockFileName, 'utf8');
+    if (!newLockFileContent || existingLockFileContent === newLockFileContent) {
       return null;
     }
 
@@ -64,7 +68,7 @@ export async function updateArtifacts({
     if (err.message === TEMPORARY_ERROR) {
       throw err;
     }
-    logger.debug({ err }, 'Failed to update mise.lock');
+    logger.warn({ err }, 'Failed to update mise.lock');
     return [
       {
         artifactError: {

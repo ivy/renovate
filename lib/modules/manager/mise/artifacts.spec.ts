@@ -1,17 +1,28 @@
-import { mockExecAll } from '~test/exec-util.ts';
-import { fs } from '~test/util.ts';
+import { mockDeep } from 'vitest-mock-extended';
+import { envMock, mockExecAll } from '~test/exec-util.ts';
+import { env, fs } from '~test/util.ts';
 import { GlobalConfig } from '../../../config/global.ts';
 import type { RepoGlobalConfig } from '../../../config/types.ts';
 import { TEMPORARY_ERROR } from '../../../constants/error-messages.ts';
 import { ExecError } from '../../../util/exec/exec-error.ts';
+import * as docker from '../../../util/exec/docker/index.ts';
+import * as _datasource from '../../datasource/index.ts';
 import type { UpdateArtifact } from '../types.ts';
 import { updateArtifacts } from './artifacts.ts';
 
 vi.mock('../../../util/exec/env.ts');
 vi.mock('../../../util/fs/index.ts');
+vi.mock('../../datasource/index.ts', () => mockDeep());
 
-const globalConfig: RepoGlobalConfig = {
-  localDir: '',
+process.env.CONTAINERBASE = 'true';
+
+const datasource = vi.mocked(_datasource);
+
+const adminConfig: RepoGlobalConfig = {
+  localDir: '/tmp/github/some/repo',
+  cacheDir: '/tmp/cache',
+  containerbaseDir: '/tmp/cache/containerbase',
+  dockerSidecarImage: 'ghcr.io/renovatebot/base-image',
 };
 
 describe('modules/manager/mise/artifacts', () => {
@@ -19,13 +30,24 @@ describe('modules/manager/mise/artifacts', () => {
     let updateArtifact: UpdateArtifact;
 
     beforeEach(() => {
-      GlobalConfig.set(globalConfig);
+      env.getChildProcessEnv.mockReturnValue(envMock.basic);
+      GlobalConfig.set(adminConfig);
+      docker.resetPrefetchedImages();
       updateArtifact = {
         packageFileName: 'mise.toml',
         newPackageFileContent: '[tools]\nnode = "22.0.0"\n',
         config: {},
-        updatedDeps: [],
+        updatedDeps: [{ depName: 'node' }],
       };
+    });
+
+    it('returns null if no updatedDeps and not lock file maintenance', async () => {
+      expect(
+        await updateArtifacts({
+          ...updateArtifact,
+          updatedDeps: [],
+        }),
+      ).toBeNull();
     });
 
     it('returns null if no mise.lock found', async () => {
@@ -36,27 +58,24 @@ describe('modules/manager/mise/artifacts', () => {
 
     it('returns null if lockfile unchanged after exec', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
-      const lockContent = Buffer.from('existing lock content');
-      fs.readLocalFile.mockResolvedValueOnce(lockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('existing lock content');
       mockExecAll();
-      fs.readLocalFile.mockResolvedValueOnce(lockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('existing lock content');
       expect(await updateArtifacts(updateArtifact)).toBeNull();
     });
 
     it('returns updated mise.lock when content changes', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
-      const oldLockContent = Buffer.from('old lock content');
-      const newLockContent = Buffer.from('new lock content');
-      fs.readLocalFile.mockResolvedValueOnce(oldLockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
       const execSnapshots = mockExecAll();
-      fs.readLocalFile.mockResolvedValueOnce(newLockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('new lock content');
 
       expect(await updateArtifacts(updateArtifact)).toEqual([
         {
           file: {
             type: 'addition',
             path: 'mise.lock',
-            contents: newLockContent,
+            contents: 'new lock content',
           },
         },
       ]);
@@ -77,11 +96,9 @@ describe('modules/manager/mise/artifacts', () => {
 
     it('returns updated mise.lock for lock file maintenance', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
-      const oldLockContent = Buffer.from('old lock content');
-      const newLockContent = Buffer.from('new lock content');
-      fs.readLocalFile.mockResolvedValueOnce(oldLockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
       const execSnapshots = mockExecAll();
-      fs.readLocalFile.mockResolvedValueOnce(newLockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('new lock content');
 
       expect(
         await updateArtifacts({
@@ -93,7 +110,7 @@ describe('modules/manager/mise/artifacts', () => {
           file: {
             type: 'addition',
             path: 'mise.lock',
-            contents: newLockContent,
+            contents: 'new lock content',
           },
         },
       ]);
@@ -110,11 +127,9 @@ describe('modules/manager/mise/artifacts', () => {
 
     it('resolves lockfile in subdirectory', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('sub/mise.lock');
-      const oldLockContent = Buffer.from('old lock content');
-      const newLockContent = Buffer.from('new lock content');
-      fs.readLocalFile.mockResolvedValueOnce(oldLockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
       mockExecAll();
-      fs.readLocalFile.mockResolvedValueOnce(newLockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('new lock content');
 
       expect(
         await updateArtifacts({
@@ -126,7 +141,7 @@ describe('modules/manager/mise/artifacts', () => {
           file: {
             type: 'addition',
             path: 'sub/mise.lock',
-            contents: newLockContent,
+            contents: 'new lock content',
           },
         },
       ]);
@@ -134,8 +149,7 @@ describe('modules/manager/mise/artifacts', () => {
 
     it('returns artifact error on exec failure', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
-      const oldLockContent = Buffer.from('old lock content');
-      fs.readLocalFile.mockResolvedValueOnce(oldLockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
       mockExecAll(new Error('mise lock failed'));
 
       expect(await updateArtifacts(updateArtifact)).toEqual([
@@ -150,8 +164,7 @@ describe('modules/manager/mise/artifacts', () => {
 
     it('rethrows temporary error', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
-      const oldLockContent = Buffer.from('old lock content');
-      fs.readLocalFile.mockResolvedValueOnce(oldLockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
       const execError = new ExecError(TEMPORARY_ERROR, {
         cmd: '',
         stdout: '',
@@ -167,11 +180,9 @@ describe('modules/manager/mise/artifacts', () => {
 
     it('passes mise constraint to exec', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
-      const oldLockContent = Buffer.from('old lock content');
-      const newLockContent = Buffer.from('new lock content');
-      fs.readLocalFile.mockResolvedValueOnce(oldLockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
       const execSnapshots = mockExecAll();
-      fs.readLocalFile.mockResolvedValueOnce(newLockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('new lock content');
 
       await updateArtifacts({
         ...updateArtifact,
@@ -190,12 +201,76 @@ describe('modules/manager/mise/artifacts', () => {
 
     it('returns null if lockfile is null after exec', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
-      const oldLockContent = Buffer.from('old lock content');
-      fs.readLocalFile.mockResolvedValueOnce(oldLockContent as never);
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
       mockExecAll();
       fs.readLocalFile.mockResolvedValueOnce(null);
 
       expect(await updateArtifacts(updateArtifact)).toBeNull();
+    });
+
+    it('returns updated mise.lock using docker', async () => {
+      GlobalConfig.set({ ...adminConfig, binarySource: 'docker' });
+      fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      const execSnapshots = mockExecAll();
+      fs.readLocalFile.mockResolvedValueOnce('new lock content');
+      datasource.getPkgReleases.mockResolvedValueOnce({
+        releases: [{ version: '2025.1.0' }],
+      });
+
+      expect(await updateArtifacts(updateArtifact)).toEqual([
+        {
+          file: {
+            type: 'addition',
+            path: 'mise.lock',
+            contents: 'new lock content',
+          },
+        },
+      ]);
+      expect(execSnapshots).toMatchObject([
+        { cmd: 'docker pull ghcr.io/renovatebot/base-image' },
+        { cmd: 'docker ps --filter name=renovate_sidecar -aq' },
+        {
+          cmd:
+            'docker run --rm --name=renovate_sidecar --label=renovate_child ' +
+            '-v "/tmp/github/some/repo":"/tmp/github/some/repo" ' +
+            '-v "/tmp/cache":"/tmp/cache" ' +
+            '-e MISE_YES ' +
+            '-e CONTAINERBASE_CACHE_DIR ' +
+            '-w "/tmp/github/some/repo" ' +
+            'ghcr.io/renovatebot/base-image ' +
+            'bash -l -c "' +
+            'install-tool mise 2025.1.0 ' +
+            '&& ' +
+            'mise lock' +
+            '"',
+        },
+      ]);
+    });
+
+    it('returns updated mise.lock using install mode', async () => {
+      GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
+      fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      const execSnapshots = mockExecAll();
+      fs.readLocalFile.mockResolvedValueOnce('new lock content');
+      datasource.getPkgReleases.mockResolvedValueOnce({
+        releases: [{ version: '2025.1.0' }],
+      });
+
+      expect(await updateArtifacts(updateArtifact)).toEqual([
+        {
+          file: {
+            type: 'addition',
+            path: 'mise.lock',
+            contents: 'new lock content',
+          },
+        },
+      ]);
+      expect(execSnapshots).toMatchObject([
+        { cmd: 'install-tool mise 2025.1.0' },
+        { cmd: 'mise lock' },
+      ]);
     });
   });
 });

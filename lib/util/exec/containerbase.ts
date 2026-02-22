@@ -137,6 +137,12 @@ const allToolConfig: Record<string, ToolConfig> = {
     packageName: 'containerbase/maven-prebuild',
     versioning: mavenVersioningId,
   },
+  mise: {
+    datasource: 'github-releases',
+    packageName: 'jdx/mise',
+    versioning: semverVersioningId,
+    extractVersion: '^v(?<version>.*)$',
+  },
   nix: {
     datasource: 'github-releases',
     packageName: 'containerbase/nix-prebuild',
