@@ -115,8 +115,9 @@ it runs `mise lock` to regenerate the lockfile with updated checksums and downlo
 
 If no `mise.lock` file exists, Renovate will not create one.
 
-Renovate also supports lock file maintenance for `mise.lock`, which periodically regenerates
-the full lockfile.
+Renovate also supports lock file maintenance for `mise.lock`.
+During lock file maintenance, Renovate deletes the existing `mise.lock` before running `mise lock`
+to force a full regeneration from scratch.
 
 ### Supported default registry tool short names
 

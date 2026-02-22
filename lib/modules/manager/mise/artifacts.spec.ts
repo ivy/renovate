@@ -64,6 +64,7 @@ describe('modules/manager/mise/artifacts', () => {
         'mise.toml',
         '[tools]\nnode = "22.0.0"\n',
       );
+      expect(fs.deleteLocalFile).not.toHaveBeenCalled();
       expect(execSnapshots).toMatchObject([
         {
           cmd: 'mise lock',
@@ -96,6 +97,7 @@ describe('modules/manager/mise/artifacts', () => {
           },
         },
       ]);
+      expect(fs.deleteLocalFile).toHaveBeenCalledWith('mise.lock');
       expect(execSnapshots).toMatchObject([
         {
           cmd: 'mise lock',
