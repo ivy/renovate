@@ -1,9 +1,9 @@
-import { isNonEmptyArray } from '@sindresorhus/is';
+import { isNonEmptyArray, isString } from '@sindresorhus/is';
 import upath from 'upath';
 import { TEMPORARY_ERROR } from '../../../constants/error-messages.ts';
 import { logger } from '../../../logger/index.ts';
 import { exec } from '../../../util/exec/index.ts';
-import type { ExecOptions } from '../../../util/exec/types.ts';
+import type { ExecOptions, ToolConstraint } from '../../../util/exec/types.ts';
 import {
   deleteLocalFile,
   ensureCacheDir,
@@ -11,9 +11,40 @@ import {
   readLocalFile,
   writeLocalFile,
 } from '../../../util/fs/index.ts';
-import type { MiseMinVersion } from './schema.ts';
+import type { MiseFile, MiseMinVersion } from './schema.ts';
 import { parseTomlFile } from './utils.ts';
 import type { UpdateArtifact, UpdateArtifactsResult } from '../types.ts';
+
+/**
+ * Backends that require an external CLI to resolve versions during `mise lock`.
+ * Maps the mise backend prefix to the containerbase tool name.
+ * @link https://mise.jdx.dev/dev-tools/backends/
+ */
+const backendToolMap: Record<string, string> = {
+  npm: 'node',
+  pipx: 'python',
+  cargo: 'rust',
+  gem: 'ruby',
+  go: 'golang',
+  dotnet: 'dotnet',
+  spm: 'swift',
+};
+
+function getBackendToolConstraints(
+  miseConfig: MiseFile | null,
+): ToolConstraint[] {
+  if (!miseConfig?.tools) {
+    return [];
+  }
+  return [
+    ...new Set(
+      Object.keys(miseConfig.tools)
+        .filter((key) => key.includes(':'))
+        .map((key) => backendToolMap[key.substring(0, key.indexOf(':'))])
+        .filter(isString),
+    ),
+  ].map((toolName) => ({ toolName }));
+}
 
 function getMiseConstraint(minVersion: MiseMinVersion | undefined): string | undefined {
   if (!minVersion) {
@@ -63,6 +94,7 @@ export async function updateArtifacts({
       cwdFile: packageFileName,
       docker: {},
       toolConstraints: [
+        ...getBackendToolConstraints(miseConfig),
         { toolName: 'mise', constraint },
       ],
       extraEnv: {

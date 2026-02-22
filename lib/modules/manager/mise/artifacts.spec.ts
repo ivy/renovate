@@ -375,5 +375,79 @@ describe('modules/manager/mise/artifacts', () => {
         { cmd: 'mise lock' },
       ]);
     });
+
+    it('adds node tool constraint for npm backend', async () => {
+      GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
+      fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
+      const execSnapshots = mockExecAll();
+      fs.readLocalFile.mockResolvedValueOnce('new lock content');
+      datasource.getPkgReleases
+        .mockResolvedValueOnce({ releases: [{ version: '22.0.0' }] })
+        .mockResolvedValueOnce({ releases: [{ version: '2025.1.0' }] });
+
+      await updateArtifacts({
+        ...updateArtifact,
+        newPackageFileContent:
+          '[tools]\n"npm:prettier" = "3.0.0"\nnode = "22.0.0"\n',
+      });
+
+      expect(execSnapshots).toMatchObject([
+        { cmd: 'install-tool node 22.0.0' },
+        { cmd: 'install-tool mise 2025.1.0' },
+        { cmd: 'mise lock' },
+      ]);
+    });
+
+    it('adds multiple backend tool constraints', async () => {
+      GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
+      fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
+      const execSnapshots = mockExecAll();
+      fs.readLocalFile.mockResolvedValueOnce('new lock content');
+      datasource.getPkgReleases
+        .mockResolvedValueOnce({ releases: [{ version: '22.0.0' }] })
+        .mockResolvedValueOnce({ releases: [{ version: '3.13.0' }] })
+        .mockResolvedValueOnce({ releases: [{ version: '2025.1.0' }] });
+
+      await updateArtifacts({
+        ...updateArtifact,
+        newPackageFileContent:
+          '[tools]\n"npm:prettier" = "3.0.0"\n"pipx:black" = "24.0.0"\n',
+      });
+
+      expect(execSnapshots).toMatchObject([
+        { cmd: 'install-tool node 22.0.0' },
+        { cmd: 'install-tool python 3.13.0' },
+        { cmd: 'install-tool mise 2025.1.0' },
+        { cmd: 'mise lock' },
+      ]);
+    });
+
+    it('deduplicates backend tool constraints', async () => {
+      GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
+      fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
+      const execSnapshots = mockExecAll();
+      fs.readLocalFile.mockResolvedValueOnce('new lock content');
+      datasource.getPkgReleases
+        .mockResolvedValueOnce({ releases: [{ version: '22.0.0' }] })
+        .mockResolvedValueOnce({ releases: [{ version: '2025.1.0' }] });
+
+      await updateArtifacts({
+        ...updateArtifact,
+        newPackageFileContent:
+          '[tools]\n"npm:prettier" = "3.0.0"\n"npm:eslint" = "9.0.0"\n',
+      });
+
+      expect(execSnapshots).toMatchObject([
+        { cmd: 'install-tool node 22.0.0' },
+        { cmd: 'install-tool mise 2025.1.0' },
+        { cmd: 'mise lock' },
+      ]);
+    });
   });
 });
