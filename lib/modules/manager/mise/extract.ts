@@ -148,7 +148,7 @@ function getToolConfig(
     case 'ubi':
       return createUbiToolConfig(toolName, version, toolOptions);
     default:
-      // Unsupported backend
+      logger.warn({ toolName }, 'Unsupported backend');
       return null;
   }
 }

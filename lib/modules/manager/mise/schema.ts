@@ -18,8 +18,18 @@ const MiseTool = z.union([
 ]);
 export type MiseTool = z.infer<typeof MiseTool>;
 
+const MiseMinVersion = z.union([
+  z.string(),
+  z.object({
+    hard: z.string().optional(),
+    soft: z.string().optional(),
+  }),
+]);
+export type MiseMinVersion = z.infer<typeof MiseMinVersion>;
+
 export const MiseFile = Toml.pipe(
   z.object({
+    min_version: MiseMinVersion.optional(),
     tools: z.record(MiseTool),
   }),
 );

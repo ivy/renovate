@@ -59,6 +59,7 @@ describe('modules/manager/mise/artifacts', () => {
     it('returns null if lockfile unchanged after exec', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
       fs.readLocalFile.mockResolvedValueOnce('existing lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
       mockExecAll();
       fs.readLocalFile.mockResolvedValueOnce('existing lock content');
       expect(await updateArtifacts(updateArtifact)).toBeNull();
@@ -67,6 +68,7 @@ describe('modules/manager/mise/artifacts', () => {
     it('returns updated mise.lock when content changes', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
       fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
       const execSnapshots = mockExecAll();
       fs.readLocalFile.mockResolvedValueOnce('new lock content');
 
@@ -83,12 +85,15 @@ describe('modules/manager/mise/artifacts', () => {
         'mise.toml',
         '[tools]\nnode = "22.0.0"\n',
       );
-      expect(fs.deleteLocalFile).not.toHaveBeenCalled();
+      expect(fs.deleteLocalFile).toHaveBeenCalledWith('mise.lock');
       expect(execSnapshots).toMatchObject([
         {
           cmd: 'mise lock',
           options: {
-            env: { MISE_YES: '1' },
+            env: {
+              MISE_YES: '1',
+              MISE_OVERRIDE_CONFIG_FILENAMES: 'mise.toml',
+            },
           },
         },
       ]);
@@ -97,6 +102,7 @@ describe('modules/manager/mise/artifacts', () => {
     it('returns updated mise.lock for lock file maintenance', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
       fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
       const execSnapshots = mockExecAll();
       fs.readLocalFile.mockResolvedValueOnce('new lock content');
 
@@ -119,7 +125,10 @@ describe('modules/manager/mise/artifacts', () => {
         {
           cmd: 'mise lock',
           options: {
-            env: { MISE_YES: '1' },
+            env: {
+              MISE_YES: '1',
+              MISE_OVERRIDE_CONFIG_FILENAMES: 'mise.toml',
+            },
           },
         },
       ]);
@@ -128,6 +137,7 @@ describe('modules/manager/mise/artifacts', () => {
     it('resolves lockfile in subdirectory', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('sub/mise.lock');
       fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
       mockExecAll();
       fs.readLocalFile.mockResolvedValueOnce('new lock content');
 
@@ -150,6 +160,7 @@ describe('modules/manager/mise/artifacts', () => {
     it('returns artifact error on exec failure', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
       fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
       mockExecAll(new Error('mise lock failed'));
 
       expect(await updateArtifacts(updateArtifact)).toEqual([
@@ -165,6 +176,7 @@ describe('modules/manager/mise/artifacts', () => {
     it('rethrows temporary error', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
       fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
       const execError = new ExecError(TEMPORARY_ERROR, {
         cmd: '',
         stdout: '',
@@ -181,6 +193,7 @@ describe('modules/manager/mise/artifacts', () => {
     it('passes mise constraint to exec', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
       fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
       const execSnapshots = mockExecAll();
       fs.readLocalFile.mockResolvedValueOnce('new lock content');
 
@@ -193,15 +206,101 @@ describe('modules/manager/mise/artifacts', () => {
         {
           cmd: 'mise lock',
           options: {
-            env: { MISE_YES: '1' },
+            env: {
+              MISE_YES: '1',
+              MISE_OVERRIDE_CONFIG_FILENAMES: 'mise.toml',
+            },
           },
         },
+      ]);
+    });
+
+    it('extracts min_version string as constraint', async () => {
+      GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
+      fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
+      const execSnapshots = mockExecAll();
+      fs.readLocalFile.mockResolvedValueOnce('new lock content');
+      datasource.getPkgReleases.mockResolvedValueOnce({
+        releases: [
+          { version: '2024.9.0' },
+          { version: '2024.11.1' },
+          { version: '2025.1.0' },
+        ],
+      });
+
+      await updateArtifacts({
+        ...updateArtifact,
+        newPackageFileContent:
+          'min_version = "2024.11.1"\n\n[tools]\nnode = "22.0.0"\n',
+      });
+
+      expect(execSnapshots).toMatchObject([
+        { cmd: 'install-tool mise 2025.1.0' },
+        { cmd: 'mise lock' },
+      ]);
+    });
+
+    it('extracts min_version.hard as constraint', async () => {
+      GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
+      fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
+      const execSnapshots = mockExecAll();
+      fs.readLocalFile.mockResolvedValueOnce('new lock content');
+      datasource.getPkgReleases.mockResolvedValueOnce({
+        releases: [
+          { version: '2024.9.0' },
+          { version: '2024.11.1' },
+          { version: '2025.1.0' },
+        ],
+      });
+
+      await updateArtifacts({
+        ...updateArtifact,
+        newPackageFileContent:
+          'min_version = { hard = "2024.11.1", soft = "2024.9.0" }\n\n[tools]\nnode = "22.0.0"\n',
+      });
+
+      expect(execSnapshots).toMatchObject([
+        { cmd: 'install-tool mise 2025.1.0' },
+        { cmd: 'mise lock' },
+      ]);
+    });
+
+    it('prefers config.constraints.mise over min_version', async () => {
+      GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
+      fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
+      fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
+      const execSnapshots = mockExecAll();
+      fs.readLocalFile.mockResolvedValueOnce('new lock content');
+      datasource.getPkgReleases.mockResolvedValueOnce({
+        releases: [
+          { version: '2024.9.0' },
+          { version: '2024.11.1' },
+          { version: '2025.1.0' },
+        ],
+      });
+
+      await updateArtifacts({
+        ...updateArtifact,
+        newPackageFileContent:
+          'min_version = "2024.11.1"\n\n[tools]\nnode = "22.0.0"\n',
+        config: { constraints: { mise: '2024.9.0' } },
+      });
+
+      expect(execSnapshots).toMatchObject([
+        { cmd: 'install-tool mise 2024.9.0' },
+        { cmd: 'mise lock' },
       ]);
     });
 
     it('returns null if lockfile is null after exec', async () => {
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
       fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
       mockExecAll();
       fs.readLocalFile.mockResolvedValueOnce(null);
 
@@ -212,6 +311,7 @@ describe('modules/manager/mise/artifacts', () => {
       GlobalConfig.set({ ...adminConfig, binarySource: 'docker' });
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
       fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
       const execSnapshots = mockExecAll();
       fs.readLocalFile.mockResolvedValueOnce('new lock content');
       datasource.getPkgReleases.mockResolvedValueOnce({
@@ -235,7 +335,9 @@ describe('modules/manager/mise/artifacts', () => {
             'docker run --rm --name=renovate_sidecar --label=renovate_child ' +
             '-v "/tmp/github/some/repo":"/tmp/github/some/repo" ' +
             '-v "/tmp/cache":"/tmp/cache" ' +
+            '-e MISE_CACHE_DIR ' +
             '-e MISE_YES ' +
+            '-e MISE_OVERRIDE_CONFIG_FILENAMES ' +
             '-e CONTAINERBASE_CACHE_DIR ' +
             '-w "/tmp/github/some/repo" ' +
             'ghcr.io/renovatebot/base-image ' +
@@ -252,6 +354,7 @@ describe('modules/manager/mise/artifacts', () => {
       GlobalConfig.set({ ...adminConfig, binarySource: 'install' });
       fs.getSiblingFileName.mockReturnValueOnce('mise.lock');
       fs.readLocalFile.mockResolvedValueOnce('old lock content');
+      fs.ensureCacheDir.mockResolvedValueOnce('/tmp/cache/others/mise');
       const execSnapshots = mockExecAll();
       fs.readLocalFile.mockResolvedValueOnce('new lock content');
       datasource.getPkgReleases.mockResolvedValueOnce({

@@ -1,15 +1,30 @@
 import { isNonEmptyArray } from '@sindresorhus/is';
+import upath from 'upath';
 import { TEMPORARY_ERROR } from '../../../constants/error-messages.ts';
 import { logger } from '../../../logger/index.ts';
 import { exec } from '../../../util/exec/index.ts';
 import type { ExecOptions } from '../../../util/exec/types.ts';
 import {
   deleteLocalFile,
+  ensureCacheDir,
   getSiblingFileName,
   readLocalFile,
   writeLocalFile,
 } from '../../../util/fs/index.ts';
+import type { MiseMinVersion } from './schema.ts';
+import { parseTomlFile } from './utils.ts';
 import type { UpdateArtifact, UpdateArtifactsResult } from '../types.ts';
+
+function getMiseConstraint(minVersion: MiseMinVersion | undefined): string | undefined {
+  if (!minVersion) {
+    return undefined;
+  }
+  if (typeof minVersion === 'string') {
+    return `>= ${minVersion}`;
+  }
+  const version = minVersion.hard ?? minVersion.soft;
+  return version ? `>= ${version}` : undefined;
+}
 
 export async function updateArtifacts({
   packageFileName,
@@ -33,18 +48,35 @@ export async function updateArtifacts({
 
   try {
     await writeLocalFile(packageFileName, newPackageFileContent);
-    if (config.isLockFileMaintenance) {
-      await deleteLocalFile(lockFileName);
-    }
+
+    // `mise lock` is non-deterministic -- it appends to the lockfile, leaving
+    // behind old versions.
+    await deleteLocalFile(lockFileName);
+
+    const miseConfig = parseTomlFile(newPackageFileContent, packageFileName);
+    const constraint =
+      config.constraints?.mise ?? getMiseConstraint(miseConfig?.min_version);
+
+    const MISE_CACHE_DIR = await ensureCacheDir('mise');
 
     const execOptions: ExecOptions = {
       cwdFile: packageFileName,
       docker: {},
       toolConstraints: [
-        { toolName: 'mise', constraint: config.constraints?.mise },
+        { toolName: 'mise', constraint },
       ],
       extraEnv: {
+        // Preserve internal cache to speed up lockfile regeneration
+        // See https://mise.jdx.dev/configuration.html#mise-cache-dir
+        MISE_CACHE_DIR,
+
+        // Automatically answer yes to prompts (to trust mise.toml files)
+        // See https://mise.jdx.dev/configuration/settings.html#yes
         MISE_YES: '1',
+
+        // Explicitly use `cwdFile` to support config files with differing names
+        // See https://mise.jdx.dev/configuration/settings.html#override_config_filenames
+        MISE_OVERRIDE_CONFIG_FILENAMES: upath.basename(packageFileName),
       },
     };
 
