@@ -32,6 +32,9 @@ export async function updateArtifacts({
       toolConstraints: [
         { toolName: 'mise', constraint: config.constraints?.mise },
       ],
+      extraEnv: {
+        MISE_YES: '1',
+      },
     };
 
     await exec('mise lock', execOptions);

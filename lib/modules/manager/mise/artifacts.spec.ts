@@ -64,7 +64,14 @@ describe('modules/manager/mise/artifacts', () => {
         'mise.toml',
         '[tools]\nnode = "22.0.0"\n',
       );
-      expect(execSnapshots).toMatchObject([{ cmd: 'mise lock' }]);
+      expect(execSnapshots).toMatchObject([
+        {
+          cmd: 'mise lock',
+          options: {
+            env: { MISE_YES: '1' },
+          },
+        },
+      ]);
     });
 
     it('returns updated mise.lock for lock file maintenance', async () => {
@@ -89,7 +96,14 @@ describe('modules/manager/mise/artifacts', () => {
           },
         },
       ]);
-      expect(execSnapshots).toMatchObject([{ cmd: 'mise lock' }]);
+      expect(execSnapshots).toMatchObject([
+        {
+          cmd: 'mise lock',
+          options: {
+            env: { MISE_YES: '1' },
+          },
+        },
+      ]);
     });
 
     it('resolves lockfile in subdirectory', async () => {
@@ -162,7 +176,14 @@ describe('modules/manager/mise/artifacts', () => {
         config: { constraints: { mise: '2025.1.0' } },
       });
 
-      expect(execSnapshots).toMatchObject([{ cmd: 'mise lock' }]);
+      expect(execSnapshots).toMatchObject([
+        {
+          cmd: 'mise lock',
+          options: {
+            env: { MISE_YES: '1' },
+          },
+        },
+      ]);
     });
 
     it('returns null if lockfile is null after exec', async () => {
