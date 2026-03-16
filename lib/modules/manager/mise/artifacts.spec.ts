@@ -1,17 +1,18 @@
 import { mockDeep } from 'vitest-mock-extended';
 import { envMock, mockExecAll } from '~test/exec-util.ts';
-import { env, fs } from '~test/util.ts';
+import { env, fs, hostRules } from '~test/util.ts';
 import { GlobalConfig } from '../../../config/global.ts';
 import type { RepoGlobalConfig } from '../../../config/types.ts';
 import { TEMPORARY_ERROR } from '../../../constants/error-messages.ts';
-import { ExecError } from '../../../util/exec/exec-error.ts';
 import * as docker from '../../../util/exec/docker/index.ts';
+import { ExecError } from '../../../util/exec/exec-error.ts';
 import * as _datasource from '../../datasource/index.ts';
 import type { UpdateArtifact } from '../types.ts';
 import { updateArtifacts } from './artifacts.ts';
 
 vi.mock('../../../util/exec/env.ts');
 vi.mock('../../../util/fs/index.ts');
+vi.mock('../../../util/host-rules.ts');
 vi.mock('../../datasource/index.ts', () => mockDeep());
 
 process.env.CONTAINERBASE = 'true';
@@ -33,6 +34,7 @@ describe('modules/manager/mise/artifacts', () => {
       env.getChildProcessEnv.mockReturnValue(envMock.basic);
       GlobalConfig.set(adminConfig);
       docker.resetPrefetchedImages();
+      hostRules.find.mockReturnValue({ token: 'ghp_test-token' });
       updateArtifact = {
         packageFileName: 'mise.toml',
         newPackageFileContent: '[tools]\nnode = "22.0.0"\n',
@@ -93,6 +95,7 @@ describe('modules/manager/mise/artifacts', () => {
             env: {
               MISE_YES: '1',
               MISE_OVERRIDE_CONFIG_FILENAMES: 'mise.toml',
+              MISE_GITHUB_TOKEN: 'ghp_test-token',
             },
           },
         },
@@ -128,6 +131,7 @@ describe('modules/manager/mise/artifacts', () => {
             env: {
               MISE_YES: '1',
               MISE_OVERRIDE_CONFIG_FILENAMES: 'mise.toml',
+              MISE_GITHUB_TOKEN: 'ghp_test-token',
             },
           },
         },
@@ -209,6 +213,7 @@ describe('modules/manager/mise/artifacts', () => {
             env: {
               MISE_YES: '1',
               MISE_OVERRIDE_CONFIG_FILENAMES: 'mise.toml',
+              MISE_GITHUB_TOKEN: 'ghp_test-token',
             },
           },
         },
@@ -338,6 +343,7 @@ describe('modules/manager/mise/artifacts', () => {
             '-e MISE_CACHE_DIR ' +
             '-e MISE_YES ' +
             '-e MISE_OVERRIDE_CONFIG_FILENAMES ' +
+            '-e MISE_GITHUB_TOKEN ' +
             '-e CONTAINERBASE_CACHE_DIR ' +
             '-w "/tmp/github/some/repo" ' +
             'ghcr.io/renovatebot/base-image ' +

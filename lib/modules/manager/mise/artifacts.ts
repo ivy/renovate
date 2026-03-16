@@ -11,9 +11,10 @@ import {
   readLocalFile,
   writeLocalFile,
 } from '../../../util/fs/index.ts';
+import { find } from '../../../util/host-rules.ts';
+import type { UpdateArtifact, UpdateArtifactsResult } from '../types.ts';
 import type { MiseFile, MiseMinVersion } from './schema.ts';
 import { parseTomlFile } from './utils.ts';
-import type { UpdateArtifact, UpdateArtifactsResult } from '../types.ts';
 
 /**
  * Backends that require an external CLI to resolve versions during `mise lock`.
@@ -46,7 +47,9 @@ function getBackendToolConstraints(
   ].map((toolName) => ({ toolName }));
 }
 
-function getMiseConstraint(minVersion: MiseMinVersion | undefined): string | undefined {
+function getMiseConstraint(
+  minVersion: MiseMinVersion | undefined,
+): string | undefined {
   if (!minVersion) {
     return undefined;
   }
@@ -90,6 +93,11 @@ export async function updateArtifacts({
 
     const MISE_CACHE_DIR = await ensureCacheDir('mise');
 
+    const githubToken = find({
+      hostType: 'github',
+      url: 'https://api.github.com/',
+    })?.token;
+
     const execOptions: ExecOptions = {
       cwdFile: packageFileName,
       docker: {},
@@ -109,6 +117,10 @@ export async function updateArtifacts({
         // Explicitly use `cwdFile` to support config files with differing names
         // See https://mise.jdx.dev/configuration/settings.html#override_config_filenames
         MISE_OVERRIDE_CONFIG_FILENAMES: upath.basename(packageFileName),
+
+        // Pass GitHub token to avoid rate limiting during version resolution
+        // See https://mise.jdx.dev/configuration.html#mise-github-token
+        MISE_GITHUB_TOKEN: githubToken,
       },
     };
 
